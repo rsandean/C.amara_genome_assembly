@@ -1,0 +1,129 @@
+source $HOME/.bash_profile
+conda activate /gpfs01/home/mbars7/miniconda3/envs/samtools
+
+working_directory="/gpfs01/home/mbars7/C087/hifiasm24_hifi_hic"
+input_fasta_hap1="/gpfs01/home/mbars7/C087/hifiasm24_hifi_hic/C087_HiC.hic.hap1.p_ctg
+.fa"
+input_fasta_hap2="/gpfs01/home/mbars7/C087/hifiasm24_hifi_hic/C087_HiC.hic.hap2.p_ctg
+.fa"
+prefix="C087"
+HiC_read1="/gpfs01/home/mbars7/C087/C087_1.fq.gz"
+HiC_read2="/gpfs01/home/mbars7/C087/C087_2.fq.gz"
+tempdir="/gpfs01/home/mbars7/C087/hifiasm24_hifi_hic/tmpdir"
+yahs_directory="/gpfs01/home/mbars7/yahs_1.2.2/yahs"
+
+
+##pre-alignment 
+
+cd $working_directory
+
+samtools faidx $input_fasta_hap1
+samtools faidx $input_fasta_hap2
+
+##generate genome file 
+
+cut -f1,2 $input_fasta_hap1.fai > $prefix.hap1.genome
+cut -f1,2 $input_fasta_hap2.fai > $prefix.hap2.genome
+
+bwa index $input_fasta_hap1
+bwa index $input_fasta_hap2
+
+##pipeline 
+
+##Hap1,Hap2 OmniC
+
+mkdir -p $tempdir
+
+cd $working_directory
+
+bwa mem -5SP -T0 -t 96 $input_fasta_hap1 $HiC_read1 $HiC_read2 | \
+pairtools parse --min-mapq 40 --walks-policy 5unique \
+--max-inter-align-gap 30 --nproc-in 96 --nproc-out 96 --chroms-path $prefix.hap1.genome | \
+pairtools sort --tmpdir=$tempdir | pairtools dedup --mark-dups --output-stats stats_hap1.txt | \
+pairtools split --output-pairs mapped_hap1.pairs --output-sam -|samtools view -bS -@ 96 | \
+samtools sort -@ 96 -o mapped_hap1.PT.bam
+
+bwa mem -5SP -T0 -t 96 $input_fasta_hap2 $HiC_read1 $HiC_read2 | \
+pairtools parse --min-mapq 40 --walks-policy 5unique \
+--max-inter-align-gap 30 --nproc-in 96 --nproc-out 96 --chroms-path $prefix.hap2.genome | \
+pairtools sort --tmpdir=$tempdir | pairtools dedup --mark-dups --output-stats stats_hap2.txt | \
+pairtools split --output-pairs mapped_hap2.pairs --output-sam -|samtools view -bS -@ 96 | \
+samtools sort -@ 96 -o mapped_hap2.PT.bam
+
+###yahs 
+
+mkdir -p $working_directory/hap1
+mkdir -p $working_directory/hap2
+
+cd $working_directory/hap1
+$yahs_directory/yahs $input_fasta_hap1 $working_directory/mapped_hap1.PT.bam 
+
+cd $working_directory/hap2
+$yahs_directory/yahs $input_fasta_hap2 $working_directory/mapped_hap2.PT.bam
+
+##pretext 
+
+conda activate /gpfs01/home/mbars7/miniconda3/envs/pretext
+
+cd $working_directory/hap1
+
+bwa index yahs.out_scaffolds_final.fa && \
+bwa mem -t 96 yahs.out_scaffolds_final.fa $HiC_read1 $HiC_read2 | \
+samtools sort -@96 -o sorted.bam && \
+samtools view -@96 -h sorted.bam | PretextMap -o map_hap1.pretext --mapq 0
+
+##create tracks-tracks environment has tidk version 0.2.1, bedtols, Pretext-suite
+##conda install pretext-suite 
+##conda install tidk=0.2.1 bedtools -c bioconda
+
+conda activate /gpfs01/home/mbars7/miniconda3/envs/tracks  
+
+tidk search --fasta yahs.out_scaffolds_final.fa --string TTTAGGG --output telomeres --dir telomeres_hap1 --extension bedgraph
+
+cd  $working_directory/hap1/telomeres_hap1
+
+cat *.bedgraph | PretextGraph -i $working_directory/hap1/map_hap1.pretext -n "telomeres"  
+
+cd $working_directory/hap1
+
+bedtools genomecov -ibam sorted.bam -bga > coverage_output.bedgraph
+
+
+cat coverage_output.bedgraph | PretextGraph -i map_hap1.pretext -n "coverage"
+
+grep -w 0$ coverage_output.bedgraph | sed 's/0$/200/g' > gaps.bedgraph
+ 
+cat gaps.bedgraph | PretextGraph -i map_hap1.pretext -n "gaps"
+
+###pretexthap2
+
+cd $working_directory/hap2
+
+conda activate /gpfs01/home/mbars7/miniconda3/envs/pretext
+
+bwa index yahs.out_scaffolds_final.fa && \
+bwa mem -t 96 yahs.out_scaffolds_final.fa $HiC_read1 $HiC_read2 | \
+samtools sort -@96 -o sorted.bam && \
+samtools view -@96 -h sorted.bam | PretextMap -o map_hap2.pretext --mapq 0
+
+##create tracks 
+
+conda activate /gpfs01/home/mbars7/miniconda3/envs/tracks  
+
+tidk search --fasta yahs.out_scaffolds_final.fa --string TTTAGGG --output telomeres --dir telomeres_hap2 --extension bedgraph
+
+cd  $working_directory/hap2/telomeres_hap2
+
+cat *.bedgraph | PretextGraph -i $working_directory/hap2/map_hap2.pretext -n "telomeres"  
+
+cd $working_directory/hap2
+
+bedtools genomecov -ibam sorted.bam -bga > coverage_output.bedgraph
+
+cat coverage_output.bedgraph | PretextGraph -i map_hap2.pretext -n "coverage"
+
+grep -w 0$ coverage_output.bedgraph | sed 's/0$/200/g' > gaps.bedgraph
+ 
+cat gaps.bedgraph | PretextGraph -i map_hap2.pretext -n "gaps"
+
+####done
