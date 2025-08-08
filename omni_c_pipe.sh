@@ -2,10 +2,8 @@ source $HOME/.bash_profile
 conda activate /gpfs01/home/mbars7/miniconda3/envs/samtools
 
 working_directory="/gpfs01/home/mbars7/C087/hifiasm24_hifi_hic"
-input_fasta_hap1="/gpfs01/home/mbars7/C087/hifiasm24_hifi_hic/C087_HiC.hic.hap1.p_ctg
-.fa"
-input_fasta_hap2="/gpfs01/home/mbars7/C087/hifiasm24_hifi_hic/C087_HiC.hic.hap2.p_ctg
-.fa"
+input_fasta_hap1="/gpfs01/home/mbars7/C087/hifiasm24_hifi_hic/C087_HiC.hic.hap1.p_ctg.fa"
+input_fasta_hap2="/gpfs01/home/mbars7/C087/hifiasm24_hifi_hic/C087_HiC.hic.hap2.p_ctg.fa"
 prefix="C087"
 HiC_read1="/gpfs01/home/mbars7/C087/C087_1.fq.gz"
 HiC_read2="/gpfs01/home/mbars7/C087/C087_2.fq.gz"
